@@ -1,0 +1,17 @@
+{
+  "name": "panwenbin/php_fastcgi",
+  "description": "Another FastCGI implementation in PHP",
+  "minimum-stability": "dev",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Pan Wenbin",
+      "email": "panwenbin@gmail.com"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "panwenbin\\fastcgi\\": ""
+    }
+  }
+}
