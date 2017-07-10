@@ -24,8 +24,8 @@ class Client
     // fastcgi appliaction port
     protected $fcgiPort;
 
-    // socket instance
-    protected $socket;
+    // stream fp instance
+    protected $fp;
 
     // log file
     protected $logFile;
@@ -38,17 +38,15 @@ class Client
         $this->version = Protocal::VERSION_1;
         $this->fcgiHost = $fcgiHost;
         $this->fcgiPort = $fcgiPort;
-        $this->socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-        $ok = socket_connect($this->socket, $this->fcgiHost, $this->fcgiPort);
-        if (false === $ok) {
-            $errno = socket_last_error();
-            throw new Exception(socket_strerror($errno), $errno);
+        $this->fp = stream_socket_client("tcp://{$this->fcgiHost}:{$this->fcgiPort}", $errno, $errstr, 3);
+        if(false === $this->fp) {
+            throw new Exception($errstr, $errno);
         }
     }
 
     public function __destruct()
     {
-        socket_close($this->socket);
+        fclose($this->fp);
     }
 
     /**
@@ -160,38 +158,38 @@ class Client
 
         // begin request
         $record = $this->packRecord(Protocal::TYPE_BEGIN_REQUEST, Protocal::packBeginRequestBody());
-        socket_write($this->socket, $record);
+        fwrite($this->fp, $record);
 
         // send params
         foreach ($params as $name => $value) {
             $paramRequest = $this->packNameValuePair($name, $value);
             $record = $this->packRecord(Protocal::TYPE_PARAMS, $paramRequest);
-            socket_write($this->socket, $record);
+            fwrite($this->fp, $record);
         }
         // end sending params
         $record = $this->packRecord(Protocal::TYPE_PARAMS, '');
-        socket_write($this->socket, $record);
+        fwrite($this->fp, $record);
 
         // send stdin (http request body)
         if ($stdin) {
             if (is_resource($stdin)) {
                 while ($input = stream_get_contents($stdin, 65535)) {
                     $record = $this->packRecord(Protocal::TYPE_STDIN, $input);
-                    socket_write($this->socket, $record);
+                    fwrite($this->fp, $record);
                 }
             } elseif (is_string($stdin)) {
                 $record = $this->packRecord(Protocal::TYPE_STDIN, $stdin);
-                socket_write($this->socket, $record);
+                fwrite($this->fp, $record);
             }
         }
         // end sending stdin
         $record = $this->packRecord(Protocal::TYPE_STDIN, '');
-        socket_write($this->socket, $record);
+        fwrite($this->fp, $record);
 
         // read response
         while (true) {
             // read header
-            $header = socket_read($this->socket, 8);
+            $header = fread($this->fp, 8);
             if (empty($header) || strlen($header) < 8) break;
             $header = unpack(Protocal::UNPACK_HEADER, $header);
             // log header
@@ -202,13 +200,13 @@ class Client
             // read body
             $body = '';
             while (($bodyLen = strlen($body)) < $header['contentLength']) {
-                $thunk = socket_read($this->socket, $header['contentLength'] - $bodyLen);
+                $thunk = fread($this->fp, $header['contentLength'] - $bodyLen);
                 if (empty($thunk)) break;
                 if ($thunk) $body .= $thunk;
             }
             // drop padding
             if ($header['paddingLength']) {
-                socket_read($this->socket, $header['paddingLength']);
+                fread($this->fp, $header['paddingLength']);
             }
             if ($header['type'] == Protocal::TYPE_STDOUT) {
                 if (is_callable($this->stdoutCallback)) {
