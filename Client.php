@@ -22,8 +22,7 @@ class Client
     // to generate different request id
     protected static $lastRequestId = 0;
 
-    // fixed header values in a request
-    protected $version;
+    // hold requestId for one request
     protected $requestId;
 
     // fastcgi appliaction host
@@ -34,15 +33,11 @@ class Client
     // stream fp instance
     protected $fp;
 
-    // log file
-    protected $logFile;
-
     // stdout callback
     protected $stdoutCallback;
 
     public function __construct($fcgiHost, $fcgiPort)
     {
-        $this->version = Protocal::VERSION_1;
         $this->fcgiHost = $fcgiHost;
         $this->fcgiPort = $fcgiPort;
         $this->fp = stream_socket_client("tcp://{$this->fcgiHost}:{$this->fcgiPort}", $errno, $errstr, 3);
@@ -63,15 +58,6 @@ class Client
     public function setStdoutCallback(callable $callback)
     {
         $this->stdoutCallback = $callback;
-    }
-
-    /**
-     * Set logFile
-     * @param $logFile
-     */
-    public function setLogFile($logFile)
-    {
-        $this->logFile = $logFile;
     }
 
     /**
