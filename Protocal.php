@@ -84,10 +84,20 @@ class Protocal
     const PACK_HEADER = 'C2n2C2';
     const UNPACK_HEADER = 'Cversion/Ctype/nrequestId/ncontentLength/CpaddingLength/Creserved';
     const PACK_BEGIN_REQUEST_BODY = 'nC6';
+    const PACK_END_REQUEST_BODY = 'NC4';
     const PACK_NAME_VALUE_PAIR11 = 'CC';
     const PACK_NAME_VALUE_PAIR14 = 'CN';
     const PACK_NAME_VALUE_PAIR41 = 'NC';
     const PACK_NAME_VALUE_PAIR44 = 'NN';
+
+    /**
+     * @param $contentLength
+     * @return int
+     */
+    public static function calPaddingLength($contentLength)
+    {
+        return (8 - ($contentLength % 8)) % 8;
+    }
 
     /**
      * Build FastCGI request Header
@@ -105,12 +115,53 @@ class Protocal
     }
 
     /**
-     * Build FastCGI begin request Body (empty content)
+     * Build FastCGI begin request Body
      * @param int $flags is keep connection
      * @return string
      */
     public static function packBeginRequestBody($flags = 0)
     {
         return pack(self::PACK_BEGIN_REQUEST_BODY, self::ROLE_RESPONDER, $flags & self::FLAG_KEEP_CONN, 0, 0, 0, 0, 0);
+    }
+
+    /**
+     * Build FastCGI end request Body
+     * @param $appStatus
+     * @param int $protocolStatus
+     * @return string
+     */
+    public static function packEndRequestBody($appStatus, $protocolStatus = self::STATUS_REQUEST_COMPLETE)
+    {
+        return pack(self::PACK_END_REQUEST_BODY, $appStatus, $protocolStatus, 0, 0, 0);
+    }
+
+    /**
+     * Build FastCGI param Body
+     * @param $name
+     * @param $value
+     * @return string
+     */
+    public static function packNameValuePair($name, $value)
+    {
+        $nLen = strlen($name);
+        $vLen = strlen($value);
+        if ($nLen > 0x7f) {
+            $nLen = $nLen | (1 << 31);
+            if ($vLen > 0x7f) {
+                $vLen = $vLen | (1 << 31);
+                $format = self::PACK_NAME_VALUE_PAIR44;
+            } else {
+                $format = self::PACK_NAME_VALUE_PAIR41;
+            }
+        } else {
+            if ($vLen > 0x7f) {
+                $vLen = $vLen | (1 << 31);
+                $format = self::PACK_NAME_VALUE_PAIR14;
+            } else {
+                $format = self::PACK_NAME_VALUE_PAIR11;
+            }
+        }
+        $nvPair = pack($format, $nLen, $vLen) . $name . $value;
+        return $nvPair;
     }
 }

@@ -5,9 +5,7 @@
 
 use panwenbin\fastcgi\Client;
 
-require __DIR__ . '/../Protocal.php';
-require __DIR__ . '/../Client.php';
-require __DIR__ . '/../Exception.php';
+include __DIR__ . '/../autoload.php';
 
 $req = new Client('127.0.0.1', 9000);
 $req->setLogFile('header.log');

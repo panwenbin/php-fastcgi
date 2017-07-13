@@ -5,6 +5,13 @@
 
 namespace panwenbin\fastcgi;
 
+use panwenbin\fastcgi\record\BaseRecord;
+use panwenbin\fastcgi\record\BeginRequest;
+use panwenbin\fastcgi\record\EndRequest;
+use panwenbin\fastcgi\record\Params;
+use panwenbin\fastcgi\record\Stdin;
+use panwenbin\fastcgi\record\Stdout;
+
 /**
  * FastCGI Client implement in PHP
  *
@@ -88,61 +95,6 @@ class Client
     }
 
     /**
-     * build NameValuePair
-     * @param $name
-     * @param $value
-     * @return string
-     */
-    private function packNameValuePair($name, $value)
-    {
-        $nLen = strlen($name);
-        $vLen = strlen($value);
-        if ($nLen > 0x7f) {
-            $nLen = $nLen | (1 << 31);
-            if ($vLen > 0x7f) {
-                $vLen = $vLen | (1 << 31);
-                $format = Protocal::PACK_NAME_VALUE_PAIR44;
-            } else {
-                $format = Protocal::PACK_NAME_VALUE_PAIR41;
-            }
-        } else {
-            if ($vLen > 0x7f) {
-                $vLen = $vLen | (1 << 31);
-                $format = Protocal::PACK_NAME_VALUE_PAIR14;
-            } else {
-                $format = Protocal::PACK_NAME_VALUE_PAIR11;
-            }
-        }
-        $nvPair = pack($format, $nLen, $vLen) . $name . $value;
-        return $nvPair;
-    }
-
-    /**
-     * Build a request record (request header + request body)
-     * @param $type
-     * @param $content
-     * @return string
-     */
-    public function packRecord($type, $content)
-    {
-        $contentLength = strlen($content);
-        $paddingLength = $this->calPaddingLength($contentLength);
-
-        $record = Protocal::packRequestHeader(
-            $this->version,
-            $type,
-            $this->requestId,
-            $contentLength,
-            $paddingLength
-        );
-        $record .= $content;
-        for ($i = 0; $i < $paddingLength; $i++) {
-            $record .= pack('C', 0);
-        }
-        return $record;
-    }
-
-    /**
      * Send a request to fastcgi application
      * @param array $params
      * @param string|\resource $stdin
@@ -157,65 +109,40 @@ class Client
         $this->requestId = self::nextRequestId();
 
         // begin request
-        $record = $this->packRecord(Protocal::TYPE_BEGIN_REQUEST, Protocal::packBeginRequestBody());
-        fwrite($this->fp, $record);
+        fwrite($this->fp, BeginRequest::newInstance($this->requestId));
 
         // send params
         foreach ($params as $name => $value) {
-            $paramRequest = $this->packNameValuePair($name, $value);
-            $record = $this->packRecord(Protocal::TYPE_PARAMS, $paramRequest);
-            fwrite($this->fp, $record);
+            fwrite($this->fp, Params::newInstance($this->requestId, [$name => $value]));
         }
         // end sending params
-        $record = $this->packRecord(Protocal::TYPE_PARAMS, '');
-        fwrite($this->fp, $record);
+        fwrite($this->fp, Params::newInstance($this->requestId, []));
 
         // send stdin (http request body)
         if ($stdin) {
             if (is_resource($stdin)) {
                 while ($input = stream_get_contents($stdin, 65535)) {
-                    $record = $this->packRecord(Protocal::TYPE_STDIN, $input);
-                    fwrite($this->fp, $record);
+                    fwrite($this->fp, Stdin::newInstance($this->requestId, $input));
                 }
             } elseif (is_string($stdin)) {
-                $record = $this->packRecord(Protocal::TYPE_STDIN, $stdin);
-                fwrite($this->fp, $record);
+                fwrite($this->fp, Stdin::newInstance($this->requestId, $stdin));
             }
         }
         // end sending stdin
-        $record = $this->packRecord(Protocal::TYPE_STDIN, '');
-        fwrite($this->fp, $record);
+        fwrite($this->fp, Stdin::newInstance($this->requestId, ''));
 
         // read response
         while (true) {
-            // read header
-            $header = fread($this->fp, 8);
-            if (empty($header) || strlen($header) < 8) break;
-            $header = unpack(Protocal::UNPACK_HEADER, $header);
-            // log header
-            if ($this->logFile) {
-                file_put_contents($this->logFile, var_export($header, true) . "\r\n", FILE_APPEND);
-            }
-
-            // read body
-            $body = '';
-            while (($bodyLen = strlen($body)) < $header['contentLength']) {
-                $thunk = fread($this->fp, $header['contentLength'] - $bodyLen);
-                if (empty($thunk)) break;
-                if ($thunk) $body .= $thunk;
-            }
-            // drop padding
-            if ($header['paddingLength']) {
-                fread($this->fp, $header['paddingLength']);
-            }
-            if ($header['type'] == Protocal::TYPE_STDOUT) {
+            $record = BaseRecord::parseFromStream($this->fp);
+            if ($record instanceof Stdout) {
+                $contentData = $record->getBody()->getContentData();
                 if (is_callable($this->stdoutCallback)) {
                     $callback = $this->stdoutCallback;
-                    $callback($body);
+                    $callback($contentData);
                 } else {
-                    echo $body;
+                    echo $contentData;
                 }
-            } elseif ($header['type'] == Protocal::TYPE_END_REQUEST) {
+            } elseif ($record instanceof EndRequest) {
                 break;
             }
         }
