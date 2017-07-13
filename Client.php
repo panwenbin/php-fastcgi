@@ -25,22 +25,15 @@ class Client
     // hold requestId for one request
     protected $requestId;
 
-    // fastcgi appliaction host
-    protected $fcgiHost;
-    // fastcgi appliaction port
-    protected $fcgiPort;
-
     // stream fp instance
     protected $fp;
 
     // stdout callback
     protected $stdoutCallback;
 
-    public function __construct($fcgiHost, $fcgiPort)
+    public function __construct($fcgiServer)
     {
-        $this->fcgiHost = $fcgiHost;
-        $this->fcgiPort = $fcgiPort;
-        $this->fp = stream_socket_client("tcp://{$this->fcgiHost}:{$this->fcgiPort}", $errno, $errstr, 3);
+        $this->fp = stream_socket_client($fcgiServer, $errno, $errstr, 3);
         if(false === $this->fp) {
             throw new Exception($errstr, $errno);
         }

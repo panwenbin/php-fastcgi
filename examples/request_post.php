@@ -7,7 +7,7 @@ use panwenbin\fastcgi\Client;
 
 include __DIR__ . '/../autoload.php';
 
-$req = new Client('127.0.0.1', 9000);
+$req = new Client('tcp://127.0.0.1:9000');
 $post = 'quantity=100&item=3047936&';
 $req->request([
     'GATEWAY_INTERFACE' => 'FastCGI/1.0',
